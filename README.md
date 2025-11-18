@@ -11,6 +11,8 @@ A professional, scalable Sitemap generator for Laravel with automatic model disc
 - ✅ **Zero Configuration Required** - Everything is defined in your model, config file only for general settings
 - ✅ **Scalable** - Handles millions of records efficiently with chunking
 - ✅ **SEO Optimized** - Proper XML structure, lastmod dates, changefreq, and priority settings
+- ✅ **Dynamic Domain Detection** - Automatically uses the current request domain (v1.3.0+)
+- ✅ **No Content Duplication** - Automatically excludes latest sitemap when using year-based splitting (v1.3.0+)
 
 ## Installation
 
@@ -272,16 +274,19 @@ return [
 
 Splits sitemap into separate files for each year. Perfect for content that grows over time.
 
+**Important:** When using `split_strategy = 'year'`, the `latest.xml` file is automatically excluded from the sitemap index to prevent content duplication. All items are already covered by year-based sitemaps, so there's no need for a separate latest file.
+
 ```php
 'split_strategy' => 'year',
 ```
 
 **Generated URLs:**
-- `/sitemap-articles-latest.xml` - Latest 1000 articles
 - `/sitemap-articles-2024.xml` - All articles from 2024
 - `/sitemap-articles-2023.xml` - All articles from 2023
 - `/sitemap-articles-2022.xml` - All articles from 2022
 - ... and so on
+
+**Note:** When `split_strategy = 'year'`, the `latest.xml` file is **not included** in the sitemap index to avoid content duplication. All items are already covered by year-based sitemaps.
 
 **Use Case:** Blog posts, news articles, events
 
@@ -548,6 +553,27 @@ Cache keys follow this pattern:
 - `sitemap.{name}.total_count` - Total count
 - `sitemap.{name}.years` - Available years
 
+## Dynamic Domain Detection
+
+The package automatically detects and uses the current request domain for sitemap URLs. This means:
+
+- ✅ If you access from `http://127.0.0.1:8000`, all sitemap URLs will use this domain
+- ✅ If you access from `https://example.com`, all sitemap URLs will use this domain
+- ✅ No need to configure `APP_URL` manually for different environments
+
+**How it works:**
+- The package uses `request()->getSchemeAndHttpHost()` to get the current domain
+- This ensures sitemap URLs always match the domain you're accessing from
+- Works automatically in development, staging, and production environments
+
+**Configuration:**
+You can still set a custom base URL in `config/sitemap.php`:
+```php
+'base_url' => env('SITEMAP_BASE_URL', null), // null = auto-detect from request
+```
+
+If `base_url` is not set or equals the default `APP_URL`, the package will automatically use the current request domain.
+
 ## URL Generation
 
 The package automatically generates URLs based on your route configuration:
@@ -672,6 +698,35 @@ The package automatically:
 1. Clear sitemap cache: `php artisan sitemap:clear`
 2. Check cache driver configuration
 3. Verify cache keys are not conflicting
+
+### Wrong Domain in Sitemap URLs
+
+If sitemap URLs show the wrong domain (e.g., `localhost` instead of your actual domain):
+
+1. **Clear the sitemap cache**: The package caches the sitemap index, so clear it first:
+   ```bash
+   php artisan sitemap:clear
+   ```
+
+2. **The package auto-detects the domain**: Starting from v1.3.0, the package automatically uses the current request domain. No configuration needed!
+
+3. **If you need a fixed domain**: Set it in `config/sitemap.php`:
+   ```php
+   'base_url' => 'https://yourdomain.com',
+   ```
+
+### Duplicate Content in Sitemap
+
+If you see duplicate URLs in your sitemap:
+
+1. **When using `split_strategy = 'year'`**: The `latest.xml` file is automatically excluded to prevent duplication. This is by design.
+
+2. **Check your configuration**: Make sure you're not manually including the same items in multiple sitemap types.
+
+3. **Clear cache**: Sometimes cached data can cause issues:
+   ```bash
+   php artisan sitemap:clear
+   ```
 
 ## Requirements
 
