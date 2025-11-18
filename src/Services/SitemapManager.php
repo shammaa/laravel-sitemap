@@ -106,9 +106,21 @@ class SitemapManager
         
         return Cache::remember($cacheKey, 7200, function () use ($config) {
             $table = $config->table ?? $this->getTableFromModel($config->model);
+            $connection = DB::connection();
+            $driver = $connection->getDriverName();
             
-            $query = DB::table($table)
-                ->selectRaw('YEAR(' . $config->dateField . ') as year');
+            $query = DB::table($table);
+            
+            // Use database-specific year extraction
+            $dateField = $connection->getQueryGrammar()->wrap($config->dateField);
+            if ($driver === 'sqlite') {
+                $query->selectRaw("CAST(strftime('%Y', {$dateField}) AS INTEGER) as year");
+            } elseif ($driver === 'pgsql') {
+                $query->selectRaw("EXTRACT(YEAR FROM {$dateField}) as year");
+            } else {
+                // MySQL, MariaDB, etc.
+                $query->selectRaw("YEAR({$dateField}) as year");
+            }
             
             if ($config->statusField) {
                 $query->where($config->statusField, $config->statusValue);
