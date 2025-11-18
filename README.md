@@ -270,14 +270,25 @@ return [
 
 ## Splitting Strategies
 
-### Strategy: `'year'` - Split by Year
+There are three ways to split your sitemap:
+
+1. **`'year'`** - Split by date/year (2024, 2023, 2022...)
+2. **`'range'`** - Split by count (each file contains a specific number of items)
+3. **`'none'`** - Single file (for small collections)
+
+---
+
+### Strategy: `'year'` - Split by Date/Year
 
 Splits sitemap into separate files for each year. Perfect for content that grows over time.
+
+**When to use:** When you want to split articles by year (2024, 2023, 2022...)
 
 **Important:** When using `split_strategy = 'year'`, the `latest.xml` file is automatically excluded from the sitemap index to prevent content duplication. All items are already covered by year-based sitemaps, so there's no need for a separate latest file.
 
 ```php
 'split_strategy' => 'year',
+'date_field' => 'created_at',  // Field that contains the date
 ```
 
 **Generated URLs:**
@@ -294,19 +305,27 @@ Splits sitemap into separate files for each year. Perfect for content that grows
 
 Splits sitemap into chunks of a specified size. Perfect for large datasets.
 
+**When to use:** When you want to split articles by count (each file contains a specific number of articles)
+
 ```php
 'split_strategy' => 'range',
 'range_size' => 10000,  // Each file contains 10,000 items
 ```
 
 **Generated URLs:**
-- `/sitemap-tags-latest.xml` - Latest 1000 tags
-- `/sitemap-tags-part-1.xml` - Tags 1-10,000
-- `/sitemap-tags-part-2.xml` - Tags 10,001-20,000
-- `/sitemap-tags-part-3.xml` - Tags 20,001-30,000
+- `/sitemap-posts-latest.xml` - Latest 1000 posts
+- `/sitemap-posts-part-1.xml` - Posts 1-10,000
+- `/sitemap-posts-part-2.xml` - Posts 10,001-20,000
+- `/sitemap-posts-part-3.xml` - Posts 20,001-30,000
 - ... and so on
 
-**Use Case:** Tags, categories, products (large catalogs)
+**Example:** If you have 35,000 articles:
+- `part-1.xml`: 10,000 articles
+- `part-2.xml`: 10,000 articles
+- `part-3.xml`: 10,000 articles
+- `part-4.xml`: 5,000 articles
+
+**Use Case:** Large article collections, tags, categories, products (large catalogs)
 
 ### Strategy: `'none'` - Single File
 
@@ -366,7 +385,121 @@ Returns all items for a specific type.
 
 ## Usage Examples
 
-### Example 1: Blog Articles (Split by Year)
+### Example 1: Blog Articles - Split by Date/Year
+
+**Use this when:** You want to organize articles by year (2024, 2023, etc.)
+
+```php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Shammaa\LaravelSitemap\Traits\HasSitemap;
+
+class Article extends Model
+{
+    use HasSitemap;
+
+    public static function getSitemapConfig(): array
+    {
+        return [
+            'table' => 'articles',
+            'translation_table' => 'article_translations',
+            'foreign_key' => 'article_id',
+            'slug_field' => 'slug',
+            'title_field' => 'title',
+            'route_name' => 'post',
+            'route_params' => [
+                'year' => null,
+                'month' => null,
+                'day' => null,
+                'post' => null,
+            ],
+            'status_field' => 'status',
+            'status_value' => 1,
+            'date_field' => 'created_at',  // Field that contains the date
+            'split_strategy' => 'year',     // Split by year
+            'changefreq' => 'daily',
+            'priority' => 0.8,
+        ];
+    }
+}
+```
+
+**Result:**
+- `/sitemap-articles-2024.xml` - All articles from 2024
+- `/sitemap-articles-2023.xml` - All articles from 2023
+- `/sitemap-articles-2022.xml` - All articles from 2022
+- ... and so on
+
+**Note:** `latest.xml` is automatically excluded to avoid duplication.
+
+---
+
+### Example 2: Articles - Split by Count (10000 per file)
+
+**Use this when:** You have many articles and want each file to contain 10,000 articles
+
+```php
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Shammaa\LaravelSitemap\Traits\HasSitemap;
+
+class Post extends Model
+{
+    use HasSitemap;
+
+    public static function getSitemapConfig(): array
+    {
+        return [
+            'table' => 'posts',
+            'translation_table' => 'post_translations',
+            'foreign_key' => 'post_id',
+            'slug_field' => 'slug',
+            'title_field' => 'title',
+            'route_name' => 'post',
+            'route_params' => [
+                'year' => null,
+                'month' => null,
+                'day' => null,
+                'post' => null,
+            ],
+            'status_field' => 'status',
+            'status_value' => 1,
+            'date_field' => 'created_at',
+            'split_strategy' => 'range',     // Split by count
+            'range_size' => 10000,           // Each file contains 10,000 articles
+            'cache_time' => 3600,
+            'latest_cache_time' => 600,
+            'latest_limit' => 1000,
+            'changefreq' => 'daily',
+            'priority' => 0.8,
+            'latest_priority' => 1.0,
+        ];
+    }
+}
+```
+
+**Result:**
+- `/sitemap-posts-latest.xml` - Latest 1000 posts
+- `/sitemap-posts-part-1.xml` - Posts 1-10,000
+- `/sitemap-posts-part-2.xml` - Posts 10,001-20,000
+- `/sitemap-posts-part-3.xml` - Posts 20,001-30,000
+- ... and so on
+
+**Example:** If you have 35,000 articles:
+- `part-1.xml`: 10,000 articles
+- `part-2.xml`: 10,000 articles
+- `part-3.xml`: 10,000 articles
+- `part-4.xml`: 5,000 articles
+
+---
+
+### Example 3: Blog Articles (Original Example - Split by Year)
 
 ```php
 <?php
