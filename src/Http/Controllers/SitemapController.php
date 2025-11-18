@@ -22,18 +22,26 @@ class SitemapController extends Controller
     public function index()
     {
         $cacheKey = 'sitemap.main.index.urls';
-        $baseUrl = config('sitemap.base_url', url('/'));
+        // Use current request URL instead of config to support dynamic domains
+        $baseUrl = config('sitemap.base_url');
+        $defaultAppUrl = config('app.url', 'https://example.com');
+        if (empty($baseUrl) || $baseUrl === $defaultAppUrl) {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
 
         $urls = cache()->remember($cacheKey, 3600, function () use ($baseUrl) {
             $urls = [];
             $now = Carbon::now()->format('Y-m-d\TH:i:sP');
 
             foreach ($this->sitemapManager->getAllConfigs() as $name => $config) {
-                // Latest sitemap
-                $urls[] = [
-                    'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
-                    'lastmod' => $now,
-                ];
+                // Latest sitemap - only include if splitByYear is disabled to avoid duplication
+                // When splitByYear is enabled, all items are already covered by year-based sitemaps
+                if (!$config->splitByYear) {
+                    $urls[] = [
+                        'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
+                        'lastmod' => $now,
+                    ];
+                }
 
                 // Year-based sitemaps
                 if ($config->splitByYear) {

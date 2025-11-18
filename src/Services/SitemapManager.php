@@ -143,22 +143,49 @@ class SitemapManager
             return call_user_func($config->urlCallback, $item, $config);
         }
 
+        // Get base URL from current request or config
+        $baseUrl = $this->getBaseUrl();
+
         // Use route name from config
         if ($config->routeName) {
             $params = $this->buildRouteParams($config, $item);
             if (Route::has($config->routeName)) {
-                return route($config->routeName, $params);
+                // Get route URL and replace domain with current request domain
+                $routeUrl = route($config->routeName, $params);
+                $configUrl = config('app.url', 'http://localhost');
+                // Replace the configured URL with current request URL
+                if ($configUrl && $configUrl !== $baseUrl) {
+                    $routeUrl = str_replace($configUrl, $baseUrl, $routeUrl);
+                }
+                return $routeUrl;
             }
         }
 
         // Use route prefix
         if ($config->routePrefix) {
-            return $this->buildUrlFromPrefix($config, $item);
+            $relativePath = $this->buildUrlFromPrefix($config, $item, true);
+            return rtrim($baseUrl, '/') . '/' . ltrim($relativePath, '/');
         }
 
         // Fallback
         $id = $item->id ?? (is_object($item) && method_exists($item, 'getKey') ? $item->getKey() : null);
-        return url('/' . ($config->table ?? 'items') . '/' . ($id ?? ''));
+        $path = '/' . ($config->table ?? 'items') . '/' . ($id ?? '');
+        return rtrim($baseUrl, '/') . $path;
+    }
+
+    /**
+     * Get base URL from current request or config
+     */
+    protected function getBaseUrl(): string
+    {
+        // Use current request URL if available
+        if (app()->runningInConsole()) {
+            $baseUrl = config('sitemap.base_url', config('app.url', 'http://localhost'));
+        } else {
+            $baseUrl = request()->getSchemeAndHttpHost();
+        }
+        
+        return $baseUrl;
     }
 
     /**
@@ -208,7 +235,7 @@ class SitemapManager
     /**
      * Build URL from route prefix
      */
-    protected function buildUrlFromPrefix(SitemapConfig $config, $item): string
+    protected function buildUrlFromPrefix(SitemapConfig $config, $item, bool $relative = false): string
     {
         $slug = $item->{$config->slugField} ?? null;
         
@@ -223,14 +250,15 @@ class SitemapManager
         $id = $item->id ?? (is_object($item) && method_exists($item, 'getKey') ? $item->getKey() : null);
         
         if (!$id) {
-            return url('/');
+            return $relative ? '/' : url('/');
         }
         
+        $path = "/ar/{$config->routePrefix}/{$id}";
         if ($slug && $slug != $id && !empty($slug)) {
-            return url("/ar/{$config->routePrefix}/{$id}/" . urlencode($slug));
+            $path .= '/' . urlencode($slug);
         }
         
-        return url("/ar/{$config->routePrefix}/{$id}");
+        return $relative ? $path : url($path);
     }
 
     /**
