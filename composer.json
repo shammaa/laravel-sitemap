@@ -1,0 +1,48 @@
+{
+    "name": "shammaa/laravel-sitemap",
+    "description": "Professional, scalable Sitemap generator for Laravel with automatic model discovery, flexible chunking strategies, and advanced caching",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Shadi Shammaa",
+            "email": "shadi.shammaa@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/http": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/view": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/cache": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/database": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/routing": "^9.0|^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0",
+        "orchestra/testbench": "^8.0|^9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Shammaa\\LaravelSitemap\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Shammaa\\LaravelSitemap\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Shammaa\\LaravelSitemap\\LaravelSitemapServiceProvider"
+            ],
+            "aliases": {
+                "Sitemap": "Shammaa\\LaravelSitemap\\Facades\\Sitemap"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
+
