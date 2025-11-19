@@ -15,7 +15,19 @@ trait HasSitemap
     public function getSitemapUrl(): string
     {
         // This will be handled by SitemapManager using config
-        return url('/' . $this->getTable() . '/' . $this->getKey());
+        $path = '/' . $this->getTable() . '/' . $this->getKey();
+        
+        if (app()->runningInConsole()) {
+            $baseUrl = config('sitemap.base_url', config('app.url', 'http://localhost'));
+            return rtrim($baseUrl, '/') . $path;
+        }
+        
+        try {
+            return url($path);
+        } catch (\Exception $e) {
+            $baseUrl = config('sitemap.base_url', config('app.url', 'http://localhost'));
+            return rtrim($baseUrl, '/') . $path;
+        }
     }
 
     /**
