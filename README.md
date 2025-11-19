@@ -164,7 +164,7 @@ public static function getSitemapConfig(): array
         'foreign_key' => 'article_id',           // Foreign key in translation table
         'slug_field' => 'slug',                  // Field name for slug
         'title_field' => 'title',                // Field name for title (in translations)
-        'name_field' => 'name',                  // Field name for name (for non-translated)
+        'name_field' => null,                    // Field name for name (for non-translated). Optional - if not specified, title will be null
         
         // Route Configuration
         'route_name' => 'post',                  // Laravel route name
@@ -783,7 +783,7 @@ The package automatically:
 | `foreign_key` | string\|null | `null` | Foreign key in translation table |
 | `slug_field` | string | `'slug'` | Field name for slug |
 | `title_field` | string | `'title'` | Field name for title (in translations) |
-| `name_field` | string | `'name'` | Field name for name (non-translated) |
+| `name_field` | string\|null | `null` | Field name for name (non-translated). Optional - if not specified, title will be null |
 | `route_name` | string\|null | `null` | Laravel route name |
 | `route_prefix` | string\|null | `null` | Route prefix (alternative to route_name) |
 | `route_params` | array | `[]` | Default route parameters |
@@ -859,6 +859,27 @@ If you see duplicate URLs in your sitemap:
 3. **Clear cache**: Sometimes cached data can cause issues:
    ```bash
    php artisan sitemap:clear
+   ```
+
+### Column Not Found Error (e.g., "no such column: posts.name")
+
+If you get an error like `no such column: posts.name`:
+
+1. **The `name_field` is optional**: Starting from v1.3.1, `name_field` is optional. If your table doesn't have a `name` column, simply don't specify it in your config:
+   ```php
+   // Don't include name_field if your table doesn't have it
+   'name_field' => null,  // or omit it entirely
+   ```
+
+2. **If your table has a different field name**: Specify it explicitly:
+   ```php
+   'name_field' => 'title',  // Use 'title' instead of 'name'
+   ```
+
+3. **For translation tables**: Use `title_field` instead:
+   ```php
+   'translation_table' => 'post_translations',
+   'title_field' => 'title',  // This will be used from translation table
    ```
 
 ## Requirements

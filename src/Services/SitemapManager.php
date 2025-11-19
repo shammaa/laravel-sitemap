@@ -338,8 +338,12 @@ class SitemapManager
             $titleField = $config->titleField ?? 'title';
             $selectFields[] = "t.{$titleField} as title";
         } else {
-            $nameField = $config->nameField ?? 'name';
-            $selectFields[] = "{$table}.{$nameField} as name";
+            // Only add name/title field if it's specified in config
+            // If not specified, we'll use null (title is optional in SitemapItem)
+            if ($config->nameField) {
+                $selectFields[] = "{$table}.{$config->nameField} as name";
+            }
+            // If nameField is not specified, don't add it - SitemapItem will handle null title
         }
 
         $items = $query->get($selectFields);
@@ -402,13 +406,20 @@ class SitemapManager
             $query->limit($limit);
         }
 
-        $items = $query->get([
+        $selectFields = [
             "{$config->slugField} as slug",
             'updated_at',
             'created_at',
             'id',
-            "{$config->nameField} as name"
-        ]);
+        ];
+        
+        // Only add name field if it's specified in config
+        // If not specified, we'll use null (title is optional in SitemapItem)
+        if ($config->nameField) {
+            $selectFields[] = "{$config->nameField} as name";
+        }
+        
+        $items = $query->get($selectFields);
 
         return $items->map(function ($item) use ($config) {
             $slugValue = $item->slug;
@@ -433,12 +444,15 @@ class SitemapManager
                 $lastmod = Carbon::parse($item->created_at);
             }
 
+            // Get title from name field or use null
+            $title = $item->name ?? null;
+            
             return new SitemapItem(
                 url: $url,
                 lastmod: $lastmod,
                 changefreq: $config->changefreq,
                 priority: $config->priority,
-                title: $item->name ?? null,
+                title: $title,
                 id: $item->id
             );
         })->toArray();
