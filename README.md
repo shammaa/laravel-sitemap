@@ -898,4 +898,8 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ---
 
-**Made with ❤️ for the Laravel community**
+## Author
+
+Shadi Shammaa
+
+---

@@ -151,13 +151,18 @@ class SitemapManager
             $params = $this->buildRouteParams($config, $item);
             if (Route::has($config->routeName)) {
                 // Get route URL and replace domain with current request domain
-                $routeUrl = route($config->routeName, $params);
-                $configUrl = config('app.url', 'http://localhost');
-                // Replace the configured URL with current request URL
-                if ($configUrl && $configUrl !== $baseUrl) {
-                    $routeUrl = str_replace($configUrl, $baseUrl, $routeUrl);
+                try {
+                    $routeUrl = route($config->routeName, $params);
+                    $configUrl = config('app.url', 'http://localhost');
+                    // Replace the configured URL with current request URL
+                    if ($configUrl && $configUrl !== $baseUrl) {
+                        $routeUrl = str_replace($configUrl, $baseUrl, $routeUrl);
+                    }
+                    return $routeUrl;
+                } catch (\Exception $e) {
+                    // Fallback if route() fails (e.g., in console)
+                    // Continue to next option
                 }
-                return $routeUrl;
             }
         }
 
@@ -250,7 +255,18 @@ class SitemapManager
         $id = $item->id ?? (is_object($item) && method_exists($item, 'getKey') ? $item->getKey() : null);
         
         if (!$id) {
-            return $relative ? '/' : url('/');
+            if ($relative) {
+                return '/';
+            }
+            // Use config URL when in console
+            if (app()->runningInConsole()) {
+                return config('app.url', 'http://localhost');
+            }
+            try {
+                return url('/');
+            } catch (\Exception $e) {
+                return config('app.url', 'http://localhost');
+            }
         }
         
         $path = "/ar/{$config->routePrefix}/{$id}";
@@ -258,7 +274,22 @@ class SitemapManager
             $path .= '/' . urlencode($slug);
         }
         
-        return $relative ? $path : url($path);
+        if ($relative) {
+            return $path;
+        }
+        
+        // Use config URL when in console
+        if (app()->runningInConsole()) {
+            $baseUrl = config('sitemap.base_url', config('app.url', 'http://localhost'));
+            return rtrim($baseUrl, '/') . $path;
+        }
+        
+        try {
+            return url($path);
+        } catch (\Exception $e) {
+            $baseUrl = config('sitemap.base_url', config('app.url', 'http://localhost'));
+            return rtrim($baseUrl, '/') . $path;
+        }
     }
 
     /**
