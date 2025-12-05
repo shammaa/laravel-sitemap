@@ -6,9 +6,12 @@ namespace Shammaa\LaravelSitemap\Services;
 
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Shammaa\LaravelSitemap\Config\SitemapConfig;
 use Shammaa\LaravelSitemap\Data\SitemapItem;
+use Shammaa\LaravelSitemap\Exceptions\InvalidSitemapConfigException;
+use Shammaa\LaravelSitemap\Services\SitemapValidator;
 use Illuminate\Database\Eloquent\Model;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -22,9 +25,35 @@ class SitemapManager
         $this->configs = $configs;
     }
 
+    /**
+     * Register a sitemap configuration.
+     *
+     * @param string $name The sitemap name
+     * @param array $config The configuration array
+     * @return void
+     * @throws InvalidSitemapConfigException
+     */
     public function register(string $name, array $config): void
     {
-        $this->configs[$name] = SitemapConfig::fromArray($name, $config);
+        try {
+            // Validate configuration
+            SitemapValidator::validateConfig($name, $config);
+            
+            $this->configs[$name] = SitemapConfig::fromArray($name, $config);
+        } catch (\Exception $e) {
+            Log::error('Sitemap registration failed', [
+                'name' => $name,
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Re-throw validation exceptions
+            if ($e instanceof InvalidSitemapConfigException) {
+                throw $e;
+            }
+            
+            // For other exceptions, wrap and re-throw
+            throw new InvalidSitemapConfigException($e->getMessage(), $name);
+        }
     }
 
     public function getConfig(string $name): ?SitemapConfig
@@ -38,99 +67,219 @@ class SitemapManager
     }
 
     /**
-     * Get all items for a sitemap type
+     * Get all items for a sitemap type.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int|null $limit Optional limit
+     * @param int|null $year Optional year filter
+     * @param int|null $offset Optional offset
+     * @return array Array of SitemapItem objects
      */
     public function getItems(SitemapConfig $config, ?int $limit = null, ?int $year = null, ?int $offset = null): array
     {
-        $cacheKey = $this->getCacheKey($config, $limit, $year, $offset);
-        
-        return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $limit, $year, $offset) {
-            return $this->fetchItems($config, $limit, $year, $offset);
-        });
+        try {
+            // Validate year if provided
+            if ($year !== null) {
+                SitemapValidator::validateYear($year);
+            }
+            
+            $cacheKey = $this->getCacheKey($config, $limit, $year, $offset);
+            
+            return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $limit, $year, $offset) {
+                return $this->fetchItems($config, $limit, $year, $offset);
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getItems failed', [
+                'sitemap' => $config->name,
+                'limit' => $limit,
+                'year' => $year,
+                'offset' => $offset,
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Re-throw validation exceptions
+            if ($e instanceof InvalidSitemapConfigException) {
+                throw $e;
+            }
+            
+            // Return empty array for other exceptions
+            return [];
+        }
     }
 
     /**
-     * Get latest items for a sitemap type
+     * Get latest items for a sitemap type.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @return array Array of SitemapItem objects
      */
     public function getLatestItems(SitemapConfig $config): array
     {
-        $cacheKey = "sitemap.{$config->name}.latest";
-        
-        return Cache::remember($cacheKey, $config->latestCacheTime, function () use ($config) {
-            return $this->fetchItems($config, $config->latestLimit);
-        });
+        try {
+            $cacheKey = "sitemap.{$config->name}.latest";
+            
+            return Cache::remember($cacheKey, $config->latestCacheTime, function () use ($config) {
+                return $this->fetchItems($config, $config->latestLimit);
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getLatestItems failed', [
+                'sitemap' => $config->name,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [];
+        }
     }
 
     /**
-     * Get items by year
+     * Get items by year.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int $year The year to filter by
+     * @return array Array of SitemapItem objects
+     * @throws InvalidSitemapConfigException
      */
     public function getItemsByYear(SitemapConfig $config, int $year): array
     {
-        $cacheKey = "sitemap.{$config->name}.year.{$year}";
-        
-        return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $year) {
-            return $this->fetchItems($config, null, $year);
-        });
+        try {
+            // Validate year
+            SitemapValidator::validateYear($year);
+            
+            $cacheKey = "sitemap.{$config->name}.year.{$year}";
+            
+            return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $year) {
+                return $this->fetchItems($config, null, $year);
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getItemsByYear failed', [
+                'sitemap' => $config->name,
+                'year' => $year,
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Re-throw validation exceptions
+            if ($e instanceof InvalidSitemapConfigException) {
+                throw $e;
+            }
+            
+            // Return empty array for other exceptions
+            return [];
+        }
     }
 
     /**
-     * Get items by range (for chunking)
+     * Get items by range (for chunking).
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int $offset The offset
+     * @param int $limit The limit
+     * @return array Array of SitemapItem objects
+     * @throws InvalidSitemapConfigException
      */
     public function getItemsByRange(SitemapConfig $config, int $offset, int $limit): array
     {
-        $cacheKey = "sitemap.{$config->name}.range.{$offset}.{$limit}";
-        
-        return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $offset, $limit) {
-            return $this->fetchItems($config, $limit, null, $offset);
-        });
+        try {
+            // Validate parameters
+            if ($offset < 0) {
+                throw new InvalidSitemapConfigException("Offset must be greater than or equal to 0, got {$offset}");
+            }
+            if ($limit <= 0) {
+                throw new InvalidSitemapConfigException("Limit must be greater than 0, got {$limit}");
+            }
+            
+            $cacheKey = "sitemap.{$config->name}.range.{$offset}.{$limit}";
+            
+            return Cache::remember($cacheKey, $config->cacheTime, function () use ($config, $offset, $limit) {
+                return $this->fetchItems($config, $limit, null, $offset);
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getItemsByRange failed', [
+                'sitemap' => $config->name,
+                'offset' => $offset,
+                'limit' => $limit,
+                'error' => $e->getMessage(),
+            ]);
+            
+            // Re-throw validation exceptions
+            if ($e instanceof InvalidSitemapConfigException) {
+                throw $e;
+            }
+            
+            // Return empty array for other exceptions
+            return [];
+        }
     }
 
     /**
-     * Get total count of items
+     * Get total count of items.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @return int The total count
      */
     public function getTotalCount(SitemapConfig $config): int
     {
-        $cacheKey = "sitemap.{$config->name}.total_count";
-        
-        return Cache::remember($cacheKey, 86400, function () use ($config) {
-            return $this->getCount($config);
-        });
+        try {
+            $cacheKey = "sitemap.{$config->name}.total_count";
+            
+            return Cache::remember($cacheKey, 86400, function () use ($config) {
+                return $this->getCount($config);
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getTotalCount failed', [
+                'sitemap' => $config->name,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return 0;
+        }
     }
 
     /**
-     * Get available years for a config
+     * Get available years for a config.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @return array Array of years
      */
     public function getYears(SitemapConfig $config): array
     {
-        $cacheKey = "sitemap.{$config->name}.years";
-        
-        return Cache::remember($cacheKey, 7200, function () use ($config) {
-            $table = $config->table ?? $this->getTableFromModel($config->model);
-            $connection = DB::connection();
-            $driver = $connection->getDriverName();
+        try {
+            $cacheKey = "sitemap.{$config->name}.years";
             
-            $query = DB::table($table);
+            return Cache::remember($cacheKey, 7200, function () use ($config) {
+                $table = $config->table ?? $this->getTableFromModel($config->model);
+                $connection = DB::connection();
+                $driver = $connection->getDriverName();
+                
+                $query = DB::table($table);
+                
+                // Use database-specific year extraction
+                $dateField = $connection->getQueryGrammar()->wrap($config->dateField);
+                if ($driver === 'sqlite') {
+                    $query->selectRaw("CAST(strftime('%Y', {$dateField}) AS INTEGER) as year");
+                } elseif ($driver === 'pgsql') {
+                    $query->selectRaw("EXTRACT(YEAR FROM {$dateField}) as year");
+                } else {
+                    // MySQL, MariaDB, etc.
+                    $query->selectRaw("YEAR({$dateField}) as year");
+                }
+                
+                if ($config->statusField) {
+                    $query->where($config->statusField, $config->statusValue);
+                }
+                
+                return $query->groupBy('year')
+                    ->orderBy('year', 'desc')
+                    ->pluck('year')
+                    ->toArray();
+            });
+        } catch (\Exception $e) {
+            Log::error('Sitemap getYears failed', [
+                'sitemap' => $config->name,
+                'error' => $e->getMessage(),
+            ]);
             
-            // Use database-specific year extraction
-            $dateField = $connection->getQueryGrammar()->wrap($config->dateField);
-            if ($driver === 'sqlite') {
-                $query->selectRaw("CAST(strftime('%Y', {$dateField}) AS INTEGER) as year");
-            } elseif ($driver === 'pgsql') {
-                $query->selectRaw("EXTRACT(YEAR FROM {$dateField}) as year");
-            } else {
-                // MySQL, MariaDB, etc.
-                $query->selectRaw("YEAR({$dateField}) as year");
-            }
-            
-            if ($config->statusField) {
-                $query->where($config->statusField, $config->statusValue);
-            }
-            
-            return $query->groupBy('year')
-                ->orderBy('year', 'desc')
-                ->pluck('year')
-                ->toArray();
-        });
+            return [];
+        }
     }
 
     /**
@@ -293,23 +442,48 @@ class SitemapManager
     }
 
     /**
-     * Fetch items from database
+     * Fetch items from database.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int|null $limit Optional limit
+     * @param int|null $year Optional year filter
+     * @param int|null $offset Optional offset
+     * @return array Array of SitemapItem objects
      */
     protected function fetchItems(SitemapConfig $config, ?int $limit = null, ?int $year = null, ?int $offset = null): array
     {
-        if ($config->isSpatie) {
-            return $this->fetchSpatieItems($config, $limit, $year, $offset);
-        }
+        try {
+            if ($config->isSpatie) {
+                return $this->fetchSpatieItems($config, $limit, $year, $offset);
+            }
 
-        return $this->fetchTranslatedItems($config, $limit, $year, $offset);
+            return $this->fetchTranslatedItems($config, $limit, $year, $offset);
+        } catch (\Exception $e) {
+            Log::error('Sitemap fetchItems failed', [
+                'sitemap' => $config->name,
+                'limit' => $limit,
+                'year' => $year,
+                'offset' => $offset,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [];
+        }
     }
 
     /**
-     * Fetch items with translations
+     * Fetch items with translations.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int|null $limit Optional limit
+     * @param int|null $year Optional year filter
+     * @param int|null $offset Optional offset
+     * @return array Array of SitemapItem objects
      */
     protected function fetchTranslatedItems(SitemapConfig $config, ?int $limit = null, ?int $year = null, ?int $offset = null): array
     {
-        $table = $config->table ?? $this->getTableFromModel($config->model);
+        try {
+            $table = $config->table ?? $this->getTableFromModel($config->model);
         $translationTable = $config->translationTable;
         $foreignKey = $config->foreignKey ?? str_replace('_translations', '', $translationTable ?? '') . '_id';
         
@@ -396,13 +570,31 @@ class SitemapManager
                 $config->priority
             );
         })->toArray();
+        } catch (\Exception $e) {
+            Log::error('Sitemap fetchTranslatedItems failed', [
+                'sitemap' => $config->name,
+                'limit' => $limit,
+                'year' => $year,
+                'offset' => $offset,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [];
+        }
     }
 
     /**
-     * Fetch Spatie translatable items
+     * Fetch Spatie translatable items.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @param int|null $limit Optional limit
+     * @param int|null $year Optional year filter
+     * @param int|null $offset Optional offset
+     * @return array Array of SitemapItem objects
      */
     protected function fetchSpatieItems(SitemapConfig $config, ?int $limit = null, ?int $year = null, ?int $offset = null): array
     {
+        try {
         $table = $config->table ?? $this->getTableFromModel($config->model);
         
         $query = DB::table($table)
@@ -487,10 +679,24 @@ class SitemapManager
                 id: $item->id
             );
         })->toArray();
+        } catch (\Exception $e) {
+            Log::error('Sitemap fetchSpatieItems failed', [
+                'sitemap' => $config->name,
+                'limit' => $limit,
+                'year' => $year,
+                'offset' => $offset,
+                'error' => $e->getMessage(),
+            ]);
+            
+            return [];
+        }
     }
 
     /**
-     * Get count of items
+     * Get count of items.
+     *
+     * @param SitemapConfig $config The sitemap configuration
+     * @return int The count
      */
     protected function getCount(SitemapConfig $config): int
     {

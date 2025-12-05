@@ -6,8 +6,11 @@ namespace Shammaa\LaravelSitemap\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
 use Shammaa\LaravelSitemap\Services\SitemapManager;
+use Shammaa\LaravelSitemap\Services\SitemapValidator;
 use Shammaa\LaravelSitemap\Config\SitemapConfig;
+use Shammaa\LaravelSitemap\Exceptions\SitemapNotFoundException;
 use Carbon\Carbon;
 
 class SitemapController extends Controller
@@ -17,82 +20,100 @@ class SitemapController extends Controller
     ) {}
 
     /**
-     * Main sitemap index
+     * Main sitemap index.
+     *
+     * @return \Illuminate\Http\Response
      */
     public function index()
     {
-        $cacheKey = 'sitemap.main.index.urls';
-        // Use current request URL instead of config to support dynamic domains
-        $baseUrl = config('sitemap.base_url');
-        $defaultAppUrl = config('app.url', 'https://example.com');
-        if (empty($baseUrl) || $baseUrl === $defaultAppUrl) {
-            $baseUrl = request()->getSchemeAndHttpHost();
-        }
-
-        $urls = cache()->remember($cacheKey, 3600, function () use ($baseUrl) {
-            $urls = [];
-            $now = Carbon::now()->format('Y-m-d\TH:i:sP');
-
-            foreach ($this->sitemapManager->getAllConfigs() as $name => $config) {
-                // Latest sitemap - only include if splitByYear is disabled to avoid duplication
-                // When splitByYear is enabled, all items are already covered by year-based sitemaps
-                if (!$config->splitByYear) {
-                $urls[] = [
-                    'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
-                    'lastmod' => $now,
-                ];
-                }
-
-                // Year-based sitemaps
-                if ($config->splitByYear) {
-                    $years = $this->sitemapManager->getYears($config);
-                    foreach ($years as $year) {
-                        $urls[] = [
-                            'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-{$year}.xml",
-                            'lastmod' => $now,
-                        ];
-                    }
-                }
-
-                // Range-based sitemaps
-                if ($config->splitByRange) {
-                    $total = $this->sitemapManager->getTotalCount($config);
-                    $chunks = ceil($total / $config->rangeSize);
-                    
-                    for ($i = 1; $i <= $chunks; $i++) {
-                        $urls[] = [
-                            'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-part-{$i}.xml",
-                            'lastmod' => $now,
-                        ];
-                    }
-                }
-
-                // Full sitemap (if not split)
-                if (!$config->splitByYear && !$config->splitByRange) {
-                    $urls[] = [
-                        'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}.xml",
-                        'lastmod' => $now,
-                    ];
-                }
+        try {
+            $cacheKey = 'sitemap.main.index.urls';
+            // Use current request URL instead of config to support dynamic domains
+            $baseUrl = config('sitemap.base_url');
+            $defaultAppUrl = config('app.url', 'https://example.com');
+            if (empty($baseUrl) || $baseUrl === $defaultAppUrl) {
+                $baseUrl = request()->getSchemeAndHttpHost();
             }
 
-            return $urls;
-        });
+            $urls = cache()->remember($cacheKey, 3600, function () use ($baseUrl) {
+                $urls = [];
+                $now = Carbon::now()->format('Y-m-d\TH:i:sP');
 
-        return response()->view('sitemap::index', ['urls' => $urls])
-            ->header('Content-Type', 'application/xml');
+                foreach ($this->sitemapManager->getAllConfigs() as $name => $config) {
+                    // Latest sitemap - only include if splitByYear is disabled to avoid duplication
+                    // When splitByYear is enabled, all items are already covered by year-based sitemaps
+                    if (!$config->splitByYear) {
+                        $urls[] = [
+                            'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
+                            'lastmod' => $now,
+                        ];
+                    }
+
+                    // Year-based sitemaps
+                    if ($config->splitByYear) {
+                        $years = $this->sitemapManager->getYears($config);
+                        foreach ($years as $year) {
+                            $urls[] = [
+                                'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-{$year}.xml",
+                                'lastmod' => $now,
+                            ];
+                        }
+                    }
+
+                    // Range-based sitemaps
+                    if ($config->splitByRange) {
+                        $total = $this->sitemapManager->getTotalCount($config);
+                        $chunks = ceil($total / $config->rangeSize);
+                        
+                        for ($i = 1; $i <= $chunks; $i++) {
+                            $urls[] = [
+                                'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-part-{$i}.xml",
+                                'lastmod' => $now,
+                            ];
+                        }
+                    }
+
+                    // Full sitemap (if not split)
+                    if (!$config->splitByYear && !$config->splitByRange) {
+                        $urls[] = [
+                            'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}.xml",
+                            'lastmod' => $now,
+                        ];
+                    }
+                }
+
+                return $urls;
+            });
+
+            return response()->view('sitemap::index', ['urls' => $urls])
+                ->header('Content-Type', 'application/xml');
+        } catch (\Exception $e) {
+            Log::error('Sitemap index generation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            // Return empty sitemap on error
+            return response()->view('sitemap::index', ['urls' => []])
+                ->header('Content-Type', 'application/xml');
+        }
     }
 
     /**
-     * Get sitemap by type
+     * Get sitemap by type.
+     *
+     * @param string $type The sitemap type
+     * @return \Illuminate\Http\Response
+     * @throws SitemapNotFoundException
      */
     public function type(string $type)
     {
-        $config = $this->sitemapManager->getConfig($type);
-        
-        if (!$config) {
-            abort(404);
-        }
+        try {
+            $config = $this->sitemapManager->getConfig($type);
+            
+            if (!$config) {
+                throw new SitemapNotFoundException($type);
+            }
 
         // Redirect to chunk if range-based and large
         if ($config->splitByRange) {
@@ -105,58 +126,120 @@ class SitemapController extends Controller
             }
         }
 
-        $items = $this->sitemapManager->getItems($config);
-        
-        return $this->renderSitemap($items, $config);
+            $items = $this->sitemapManager->getItems($config);
+            
+            return $this->renderSitemap($items, $config);
+        } catch (SitemapNotFoundException $e) {
+            abort(404, $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Sitemap type generation failed', [
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            
+            abort(500, 'Sitemap generation failed');
+        }
     }
 
     /**
-     * Get latest items sitemap
+     * Get latest items sitemap.
+     *
+     * @param string $type The sitemap type
+     * @return \Illuminate\Http\Response
+     * @throws SitemapNotFoundException
      */
     public function latest(string $type)
     {
-        $config = $this->sitemapManager->getConfig($type);
-        
-        if (!$config) {
-            abort(404);
-        }
+        try {
+            $config = $this->sitemapManager->getConfig($type);
+            
+            if (!$config) {
+                throw new SitemapNotFoundException($type);
+            }
 
-        $items = $this->sitemapManager->getLatestItems($config);
-        
-        return $this->renderSitemap($items, $config, $config->latestPriority);
+            $items = $this->sitemapManager->getLatestItems($config);
+            
+            return $this->renderSitemap($items, $config, $config->latestPriority);
+        } catch (SitemapNotFoundException $e) {
+            abort(404, $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Sitemap latest generation failed', [
+                'type' => $type,
+                'error' => $e->getMessage(),
+            ]);
+            
+            abort(500, 'Sitemap generation failed');
+        }
     }
 
     /**
-     * Get yearly sitemap
+     * Get yearly sitemap.
+     *
+     * @param string $type The sitemap type
+     * @param int $year The year
+     * @return \Illuminate\Http\Response
+     * @throws SitemapNotFoundException
      */
     public function yearly(string $type, int $year)
     {
-        $config = $this->sitemapManager->getConfig($type);
-        
-        if (!$config || !$config->splitByYear) {
-            abort(404);
-        }
+        try {
+            $config = $this->sitemapManager->getConfig($type);
+            
+            if (!$config || !$config->splitByYear) {
+                throw new SitemapNotFoundException($type);
+            }
 
-        $items = $this->sitemapManager->getItemsByYear($config, $year);
-        
-        return $this->renderSitemap($items, $config);
+            $items = $this->sitemapManager->getItemsByYear($config, $year);
+            
+            return $this->renderSitemap($items, $config);
+        } catch (SitemapNotFoundException $e) {
+            abort(404, $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Sitemap yearly generation failed', [
+                'type' => $type,
+                'year' => $year,
+                'error' => $e->getMessage(),
+            ]);
+            
+            abort(500, 'Sitemap generation failed');
+        }
     }
 
     /**
-     * Get range-based sitemap (chunks)
+     * Get range-based sitemap (chunks).
+     *
+     * @param string $type The sitemap type
+     * @param int $chunk The chunk number
+     * @return \Illuminate\Http\Response
+     * @throws SitemapNotFoundException
      */
     public function range(string $type, int $chunk)
     {
-        $config = $this->sitemapManager->getConfig($type);
-        
-        if (!$config || !$config->splitByRange) {
-            abort(404);
-        }
+        try {
+            $config = $this->sitemapManager->getConfig($type);
+            
+            if (!$config || !$config->splitByRange) {
+                throw new SitemapNotFoundException($type);
+            }
+            
+            // Validate chunk
+            SitemapValidator::validateChunk($chunk);
 
-        $offset = ($chunk - 1) * $config->rangeSize;
-        $items = $this->sitemapManager->getItemsByRange($config, $offset, $config->rangeSize);
-        
-        return $this->renderSitemap($items, $config);
+            $offset = ($chunk - 1) * $config->rangeSize;
+            $items = $this->sitemapManager->getItemsByRange($config, $offset, $config->rangeSize);
+            
+            return $this->renderSitemap($items, $config);
+        } catch (SitemapNotFoundException $e) {
+            abort(404, $e->getMessage());
+        } catch (\Exception $e) {
+            Log::error('Sitemap range generation failed', [
+                'type' => $type,
+                'chunk' => $chunk,
+                'error' => $e->getMessage(),
+            ]);
+            
+            abort(500, 'Sitemap generation failed');
+        }
     }
 
     /**
