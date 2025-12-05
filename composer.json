@@ -3,6 +3,7 @@
     "description": "Professional, scalable Sitemap generator for Laravel with automatic model discovery, flexible chunking strategies, and advanced caching",
     "type": "library",
     "license": "MIT",
+    "version": "1.1.0",
     "authors": [
         {
             "name": "Shadi Shammaa",
