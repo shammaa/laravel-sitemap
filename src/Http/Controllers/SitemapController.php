@@ -37,10 +37,10 @@ class SitemapController extends Controller
                 // Latest sitemap - only include if splitByYear is disabled to avoid duplication
                 // When splitByYear is enabled, all items are already covered by year-based sitemaps
                 if (!$config->splitByYear) {
-                    $urls[] = [
-                        'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
-                        'lastmod' => $now,
-                    ];
+                $urls[] = [
+                    'loc' => rtrim($baseUrl, '/') . "/sitemap-{$name}-latest.xml",
+                    'lastmod' => $now,
+                ];
                 }
 
                 // Year-based sitemaps
